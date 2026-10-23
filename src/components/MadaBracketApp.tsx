@@ -2,6 +2,8 @@
 
 import type { Match, Participant, SiteBranding } from "@/db/schema";
 import type { ArenaStatePayload, EnrichedTournament } from "@/lib/seed";
+import { authClient } from "@/lib/auth-client";
+import { AuthModal } from "@/components/AuthModal";
 import {
   Award,
   Calendar,
@@ -67,8 +69,14 @@ export function MadaBracketApp({ initialState }: MadaBracketAppProps) {
     useState<TournamentFilter>("tous");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Mode Organisateur activé par défaut pour permettre à l'utilisateur de tester immédiatement bannière, logo, tournois et scores
-  const [isOrganizerMode, setIsOrganizerMode] = useState(true);
+  // Droits selon le compte connecté. Le serveur vérifie de toute façon chaque action.
+  const { data: sessionData } = authClient.useSession();
+  const role = (sessionData?.user as { role?: string } | undefined)?.role;
+  const isAdmin = role === "admin";
+  const canManage = isAdmin || role === "organizer";
+  const [organizerView, setOrganizerView] = useState(true);
+  const isOrganizerMode = canManage && organizerView;
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   // Modals
   const [showBrandModal, setShowBrandModal] = useState(false);
@@ -570,6 +578,7 @@ export function MadaBracketApp({ initialState }: MadaBracketAppProps) {
 
           {/* Right Actions: Espace Bannière & Logo + Mode Organisateur + Nouveau Tournoi */}
           <div className="flex items-center gap-2 sm:gap-2.5">
+            {isAdmin && (
             <button
               type="button"
               onClick={() => setShowBrandModal(true)}
@@ -582,10 +591,12 @@ export function MadaBracketApp({ initialState }: MadaBracketAppProps) {
               <span className="hidden sm:inline">Bannière & Logo</span>
               <span className="sm:hidden">Logo</span>
             </button>
+            )}
 
+            {canManage && (
             <button
               type="button"
-              onClick={() => setIsOrganizerMode((v) => !v)}
+              onClick={() => setOrganizerView((v) => !v)}
               className={`hidden md:inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold border transition ${
                 isOrganizerMode
                   ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
@@ -596,7 +607,27 @@ export function MadaBracketApp({ initialState }: MadaBracketAppProps) {
               <ShieldCheck className="h-3.5 w-3.5" />
               {isOrganizerMode ? "Mode Organisateur" : "Vue Spectateur"}
             </button>
+            )}
 
+            {sessionData ? (
+              <button
+                type="button"
+                onClick={() => authClient.signOut()}
+                title={`Connecté : ${sessionData.user.name}`}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-[#121722] hover:bg-[#1E2738] border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 transition"
+              >
+                Déconnexion
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowAuthModal(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-[#121722] hover:bg-[#1E2738] border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 transition"
+              >
+                Connexion
+              </button>
+            )}
+            {isAdmin && (
             <button
               type="button"
               onClick={() => setShowCreateModal(true)}
@@ -607,6 +638,7 @@ export function MadaBracketApp({ initialState }: MadaBracketAppProps) {
               <span className="hidden sm:inline">Nouveau Tournoi</span>
               <span className="sm:hidden">Créer</span>
             </button>
+            )}
           </div>
         </div>
       </header>
@@ -655,6 +687,7 @@ export function MadaBracketApp({ initialState }: MadaBracketAppProps) {
               )}
             </div>
 
+            {isAdmin && (
             <button
               type="button"
               onClick={() => setShowBrandModal(true)}
@@ -666,6 +699,7 @@ export function MadaBracketApp({ initialState }: MadaBracketAppProps) {
               />
               <span>Personnaliser ma Bannière & mon Logo</span>
             </button>
+            )}
           </div>
 
           {/* Bottom Content inside Hero Banner: Framed Logo Medallion + Title + KPIs */}
@@ -674,8 +708,8 @@ export function MadaBracketApp({ initialState }: MadaBracketAppProps) {
             <div className="flex flex-col sm:flex-row sm:items-end gap-4 sm:gap-5 max-w-3xl">
               <button
                 type="button"
-                onClick={() => setShowBrandModal(true)}
-                title="Cliquez pour importer votre propre logo"
+                onClick={() => isAdmin && setShowBrandModal(true)}
+                title={isAdmin ? "Cliquez pour importer votre propre logo" : undefined}
                 className={`group relative h-24 w-24 sm:h-28 sm:w-28 shrink-0 overflow-hidden bg-[#0A0D14]/90 border-2 p-2 shadow-2xl flex items-center justify-center transition hover:scale-[1.03] ${logoShapeClass}`}
                 style={{ borderColor: accentColor }}
               >
@@ -940,6 +974,10 @@ export function MadaBracketApp({ initialState }: MadaBracketAppProps) {
                     <button
                       type="button"
                       onClick={() => {
+                        if (!sessionData) {
+                          setShowAuthModal(true);
+                          return;
+                        }
                         setActiveTab("inscriptions");
                         window.setTimeout(
                           () => regInputRef.current?.focus(),
@@ -953,7 +991,7 @@ export function MadaBracketApp({ initialState }: MadaBracketAppProps) {
                       {selectedTournament.maxParticipants})
                     </button>
 
-                    {isOrganizerMode &&
+                    {isAdmin &&
                       selectedTournament.participants.length >= 2 && (
                         <button
                           type="button"
@@ -971,7 +1009,7 @@ export function MadaBracketApp({ initialState }: MadaBracketAppProps) {
                   </>
                 )}
 
-                {isOrganizerMode &&
+                {isAdmin &&
                   selectedTournament.status !== "inscriptions" && (
                     <button
                       type="button"
@@ -1095,9 +1133,10 @@ export function MadaBracketApp({ initialState }: MadaBracketAppProps) {
               </div>
 
               {/* Mobile Organizer Mode Toggle */}
+              {canManage && (
               <button
                 type="button"
-                onClick={() => setIsOrganizerMode((v) => !v)}
+                onClick={() => setOrganizerView((v) => !v)}
                 className={`md:hidden inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold border transition ${
                   isOrganizerMode
                     ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
@@ -1107,6 +1146,7 @@ export function MadaBracketApp({ initialState }: MadaBracketAppProps) {
                 <ShieldCheck className="h-3.5 w-3.5" />
                 {isOrganizerMode ? "Mode Organisateur actif" : "Vue Spectateur"}
               </button>
+              )}
             </div>
           </div>
 
@@ -1240,7 +1280,7 @@ export function MadaBracketApp({ initialState }: MadaBracketAppProps) {
                         </strong>
                         .
                       </p>
-                      {isOrganizerMode && (
+                      {isAdmin && (
                         <button
                           type="button"
                           onClick={() =>
@@ -1259,7 +1299,7 @@ export function MadaBracketApp({ initialState }: MadaBracketAppProps) {
                       <p className="font-semibold">
                         Complet ! Les {selectedTournament.maxParticipants} places de ce tournoi sont toutes occupées.
                       </p>
-                      {isOrganizerMode && (
+                      {isAdmin && (
                         <button
                           type="button"
                           onClick={() => handleBracketAction("generate")}
@@ -1386,7 +1426,7 @@ export function MadaBracketApp({ initialState }: MadaBracketAppProps) {
                       </p>
                     </div>
 
-                    {isOrganizerMode &&
+                    {isAdmin &&
                       selectedTournament.status === "inscriptions" && (
                         <div className="flex flex-wrap items-center gap-2">
                           {selectedTournament.participants.length <
@@ -1731,7 +1771,7 @@ export function MadaBracketApp({ initialState }: MadaBracketAppProps) {
                   </p>
                 </div>
 
-                {isOrganizerMode && !editingInfo && (
+                {isAdmin && !editingInfo && (
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -1922,6 +1962,7 @@ export function MadaBracketApp({ initialState }: MadaBracketAppProps) {
             <span>— {branding.organizerName}</span>
           </div>
 
+          {isAdmin && (
           <div className="flex items-center gap-4">
             <button
               type="button"
@@ -1939,12 +1980,15 @@ export function MadaBracketApp({ initialState }: MadaBracketAppProps) {
               Organiser un tournoi
             </button>
           </div>
+          )}
         </div>
       </footer>
 
       {/* ===================================================================== */}
       {/* MODALS                                                                */}
       {/* ===================================================================== */}
+      {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
+
       {showBrandModal && (
         <BrandCustomizerModal
           branding={branding}
